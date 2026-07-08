@@ -1,0 +1,6 @@
+{
+  "name": "Nova Music",
+  "description": "A modern, highly customizable local-first Android music player featuring a premium Material 3 design, advanced audio controls, customizable themes, and a smart AI Music Copilot.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
