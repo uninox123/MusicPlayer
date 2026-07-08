@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -48,6 +49,16 @@ fun MainContainer(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
+        if (prefs.backgroundImageUri.isNotEmpty()) {
+            AsyncImage(
+                model = Uri.parse(prefs.backgroundImageUri),
+                contentDescription = "Background",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                alpha = 0.15f
+            )
+        }
+
         Scaffold(
             bottomBar = {
                 Column(modifier = Modifier.fillMaxWidth()) {

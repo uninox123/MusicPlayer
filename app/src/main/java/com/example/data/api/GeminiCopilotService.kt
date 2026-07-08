@@ -21,17 +21,26 @@ class GeminiCopilotService {
         .writeTimeout(90, TimeUnit.SECONDS)
         .build()
 
+    private fun extractJson(text: String): String {
+        val trimmed = text.trim()
+        val firstBrace = trimmed.indexOf('{')
+        val lastBrace = trimmed.lastIndexOf('}')
+        if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
+            return trimmed.substring(firstBrace, lastBrace + 1)
+        }
+        return trimmed
+    }
+
     suspend fun queryCopilot(
         prompt: String,
         availableSongs: List<SongEntity>,
         chatHistory: List<Pair<String, Boolean>> = emptyList() // Pair of message to isUser
     ): CopilotResponse = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-            return@withContext CopilotResponse(
-                explanation = "Gemini API key is not configured. Please add your GEMINI_API_KEY in the AI Studio Secrets panel to unlock the AI Copilot.",
-                command = "NONE"
-            )
+        val token = if (apiKey.startsWith("nvapi-")) {
+            apiKey
+        } else {
+            "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"
         }
 
         // Contextual prompt showing available library
@@ -66,62 +75,45 @@ class GeminiCopilotService {
         """.trimIndent()
 
         try {
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=$apiKey"
+            val url = "https://integrate.api.nvidia.com/v1/chat/completions"
 
-            val contentsArray = JSONArray()
+            val messagesArray = JSONArray()
+
+            // System instructions
+            val systemMsg = JSONObject()
+            systemMsg.put("role", "system")
+            systemMsg.put("content", systemInstruction)
+            messagesArray.put(systemMsg)
 
             // Add history
             chatHistory.forEach { (msg, isUser) ->
                 val contentObj = JSONObject()
-                contentObj.put("role", if (isUser) "user" else "model")
-                val partsArray = JSONArray()
-                val partObj = JSONObject()
-                partObj.put("text", msg)
-                partsArray.put(partObj)
-                contentObj.put("parts", partsArray)
-                contentsArray.put(contentObj)
+                contentObj.put("role", if (isUser) "user" else "assistant")
+                contentObj.put("content", msg)
+                messagesArray.put(contentObj)
             }
 
             // Add current prompt
             val currentContentObj = JSONObject()
             currentContentObj.put("role", "user")
-            val currentPartsArray = JSONArray()
-            val currentPartObj = JSONObject()
-            currentPartObj.put("text", prompt)
-            currentPartsArray.put(currentPartObj)
-            currentContentObj.put("parts", currentPartsArray)
-            contentsArray.put(currentContentObj)
+            currentContentObj.put("content", prompt)
+            messagesArray.put(currentContentObj)
 
             val requestBodyJson = JSONObject()
-            requestBodyJson.put("contents", contentsArray)
-
-            // System instructions
-            val systemInstructionObj = JSONObject()
-            val systemPartsArray = JSONArray()
-            val systemPartObj = JSONObject()
-            systemPartObj.put("text", systemInstruction)
-            systemPartsArray.put(systemPartObj)
-            systemInstructionObj.put("parts", systemPartsArray)
-            requestBodyJson.put("systemInstruction", systemInstructionObj)
-
-            // Generation config with high thinking level and response schema
-            val generationConfig = JSONObject()
-            val thinkingConfig = JSONObject()
-            thinkingConfig.put("thinkingLevel", "HIGH") // Set high thinking level as mandated
-            generationConfig.put("thinkingConfig", thinkingConfig)
-            
-            // Response format
-            val responseFormat = JSONObject()
-            responseFormat.put("mimeType", "application/json")
-            generationConfig.put("responseFormat", responseFormat)
-            
-            requestBodyJson.put("generationConfig", generationConfig)
+            requestBodyJson.put("model", "stepfun-ai/step-3.7-flash")
+            requestBodyJson.put("messages", messagesArray)
+            requestBodyJson.put("max_tokens", 16384)
+            requestBodyJson.put("temperature", 1.00)
+            requestBodyJson.put("top_p", 0.95)
+            requestBodyJson.put("stream", false)
 
             val mediaType = "application/json; charset=utf-8".toMediaType()
             val requestBody = requestBodyJson.toString().toRequestBody(mediaType)
 
             val request = Request.Builder()
                 .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .addHeader("Accept", "application/json")
                 .post(requestBody)
                 .build()
 
@@ -130,7 +122,7 @@ class GeminiCopilotService {
                     val errorBody = response.body?.string() ?: "Unknown error"
                     Log.e("GeminiCopilotService", "API call failed: $errorBody")
                     return@withContext CopilotResponse(
-                        explanation = "Error communicating with Gemini: ${response.message}. Ensure your API key is valid and has access to gemini-3.1-pro-preview.",
+                        explanation = "Error communicating with Nvidia NIM: ${response.message}. Details: $errorBody",
                         command = "NONE"
                     )
                 }
@@ -138,17 +130,15 @@ class GeminiCopilotService {
                 val responseBody = response.body?.string()
                 if (responseBody != null) {
                     val jsonResponse = JSONObject(responseBody)
-                    val candidates = jsonResponse.optJSONArray("candidates")
-                    val firstCandidate = candidates?.optJSONObject(0)
-                    val content = firstCandidate?.optJSONObject("content")
-                    val parts = content?.optJSONArray("parts")
-                    val firstPart = parts?.optJSONObject(0)
-                    val responseText = firstPart?.optString("text")
+                    val choices = jsonResponse.optJSONArray("choices")
+                    val firstChoice = choices?.optJSONObject(0)
+                    val message = firstChoice?.optJSONObject("message")
+                    val responseText = message?.optString("content")
 
                     if (responseText != null) {
                         try {
                             // Extract JSON from response text
-                            val cleanText = responseText.trim()
+                            val cleanText = extractJson(responseText)
                             val parsedResponse = JSONObject(cleanText)
                             
                             val explanation = parsedResponse.optString("explanation", "Here is your response.")
@@ -184,14 +174,14 @@ class GeminiCopilotService {
                     }
                 }
                 return@withContext CopilotResponse(
-                    explanation = "Received empty response from Gemini.",
+                    explanation = "Received empty response from Nvidia NIM.",
                     command = "NONE"
                 )
             }
         } catch (e: Exception) {
             Log.e("GeminiCopilotService", "Network request exception", e)
             return@withContext CopilotResponse(
-                explanation = "Failed to reach Gemini server. Connection error: ${e.localizedMessage}",
+                explanation = "Failed to reach Nvidia NIM server. Connection error: ${e.localizedMessage}",
                 command = "NONE"
             )
         }

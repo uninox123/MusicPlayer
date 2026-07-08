@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,10 +20,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.example.ui.theme.parseHexColor
 import com.example.ui.viewmodel.MusicViewModel
 
@@ -367,6 +372,80 @@ fun ThemeSettingsScreen(
                                     shape = cornerShape
                                 ) {
                                     Text("Reset")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // 6. Background Image
+            item {
+                val imagePickerLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.GetContent()
+                ) { uri: Uri? ->
+                    uri?.let { viewModel.updateBackgroundImage(it.toString()) }
+                }
+
+                Column {
+                    Text(
+                        "BACKGROUND IMAGE",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    Card(
+                        shape = cornerShape,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (prefs.backgroundImageUri.isNotEmpty()) {
+                                AsyncImage(
+                                    model = Uri.parse(prefs.backgroundImageUri),
+                                    contentDescription = "Current background",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(160.dp)
+                                        .clip(cornerShape)
+                                        .testTag("background_preview")
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Button(
+                                    onClick = { imagePickerLauncher.launch("image/*") },
+                                    shape = cornerShape,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("pick_background_button")
+                                ) {
+                                    Icon(Icons.Default.Image, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Pick Image")
+                                }
+
+                                if (prefs.backgroundImageUri.isNotEmpty()) {
+                                    OutlinedButton(
+                                        onClick = { viewModel.updateBackgroundImage("") },
+                                        shape = cornerShape,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("remove_background_button")
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Remove")
+                                    }
                                 }
                             }
                         }

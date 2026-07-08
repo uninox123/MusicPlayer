@@ -209,6 +209,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { userPreferences.updateCardRadius(radius) }
     }
 
+    fun updateBackgroundImage(uri: String) {
+        viewModelScope.launch { userPreferences.updateBackgroundImage(uri) }
+    }
+
     fun updateHomeSectionsOrder(order: String) {
         viewModelScope.launch { userPreferences.updateHomeSectionsOrder(order) }
     }
@@ -302,6 +306,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     _searchQuery.value = response.filterQuery
                 }
             }
+        }
+    }
+
+    fun scanLocalSongs() {
+        viewModelScope.launch {
+            repository.scanLocalMedia()
         }
     }
 

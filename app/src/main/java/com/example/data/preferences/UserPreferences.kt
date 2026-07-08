@@ -31,6 +31,7 @@ class UserPreferences(private val context: Context) {
         
         val PLAYBACK_SPEED = floatPreferencesKey("playback_speed")
         val PLAYBACK_PITCH = floatPreferencesKey("playback_pitch")
+        val BACKGROUND_IMAGE_URI = stringPreferencesKey("background_image_uri")
     }
 
     data class PreferencesState(
@@ -50,7 +51,8 @@ class UserPreferences(private val context: Context) {
         val eqPreset: String = "flat",
         val eqBands: String = "0,0,0,0,0", // 5 bands by default
         val playbackSpeed: Float = 1.0f,
-        val playbackPitch: Float = 1.0f
+        val playbackPitch: Float = 1.0f,
+        val backgroundImageUri: String = ""
     )
 
     val preferencesFlow: Flow<PreferencesState> = context.dataStore.data.map { preferences ->
@@ -71,7 +73,8 @@ class UserPreferences(private val context: Context) {
             eqPreset = preferences[EQ_PRESET] ?: "flat",
             eqBands = preferences[EQ_BANDS] ?: "0,0,0,0,0",
             playbackSpeed = preferences[PLAYBACK_SPEED] ?: 1.0f,
-            playbackPitch = preferences[PLAYBACK_PITCH] ?: 1.0f
+            playbackPitch = preferences[PLAYBACK_PITCH] ?: 1.0f,
+            backgroundImageUri = preferences[BACKGROUND_IMAGE_URI] ?: ""
         )
     }
 
@@ -128,5 +131,9 @@ class UserPreferences(private val context: Context) {
             it[PLAYBACK_SPEED] = speed
             it[PLAYBACK_PITCH] = pitch
         }
+    }
+
+    suspend fun updateBackgroundImage(uri: String) {
+        context.dataStore.edit { it[BACKGROUND_IMAGE_URI] = uri }
     }
 }
