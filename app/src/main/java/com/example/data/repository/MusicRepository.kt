@@ -13,6 +13,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
+import com.example.data.api.JamendoTrack
+import com.example.data.api.JamendoArtist
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.io.File
+
 
 class MusicRepository(
     private val context: Context,
@@ -188,6 +195,105 @@ class MusicRepository(
             }
         } catch (e: Exception) {
             Log.e("MusicRepository", "Error scanning local media: ${e.message}")
+        }
+    }
+
+    // Download online tracks and save to local disk & room DB
+    suspend fun downloadTrack(
+        track: JamendoTrack,
+        artist: JamendoArtist?,
+        onProgress: (Float) -> Unit
+    ): SongEntity? = withContext(Dispatchers.IO) {
+        try {
+            val client = OkHttpClient()
+            
+            // Jamendo has audiodownload. If empty, fallback to audio (stream URL)
+            val downloadUrl = if (track.audiodownload.isNotBlank()) track.audiodownload else track.audio
+            if (downloadUrl.isBlank()) return@withContext null
+            
+            val request = Request.Builder().url(downloadUrl).build()
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext null
+            
+            val body = response.body ?: return@withContext null
+            val contentLength = body.contentLength()
+            
+            val downloadsDir = File(context.filesDir, "downloads")
+            if (!downloadsDir.exists()) downloadsDir.mkdirs()
+            
+            val songFile = File(downloadsDir, "track_${track.id}.mp3")
+            
+            body.byteStream().use { inputStream ->
+                songFile.outputStream().use { outputStream ->
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    var totalBytesRead = 0L
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream.write(buffer, 0, bytesRead)
+                        totalBytesRead += bytesRead
+                        if (contentLength > 0) {
+                            onProgress(totalBytesRead.toFloat() / contentLength.toFloat())
+                        }
+                    }
+                }
+            }
+            
+            // Download album image locally so it works offline
+            var localArtPath: String? = null
+            val imageUrl = if (track.image.isNotBlank()) track.image else track.albumImage
+            if (imageUrl.isNotBlank()) {
+                try {
+                    val imgRequest = Request.Builder().url(imageUrl).build()
+                    client.newCall(imgRequest).execute().use { imgResponse ->
+                        if (imgResponse.isSuccessful) {
+                            val imgBody = imgResponse.body
+                            if (imgBody != null) {
+                                val artFile = File(downloadsDir, "track_${track.id}.jpg")
+                                artFile.writeBytes(imgBody.bytes())
+                                localArtPath = artFile.absolutePath
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("MusicRepository", "Failed to download album art", e)
+                }
+            }
+            if (localArtPath == null) {
+                localArtPath = imageUrl // fallback to remote URL
+            }
+            
+            // Write metadata json
+            val metaFile = File(downloadsDir, "track_${track.id}.json")
+            val metaJson = JSONObject()
+            metaJson.put("track", JSONObject(track.rawJson))
+            if (artist != null) {
+                metaJson.put("artist", JSONObject(artist.rawJson))
+            }
+            metaFile.writeText(metaJson.toString())
+            
+            // Create and save SongEntity in Room
+            val songEntity = SongEntity(
+                path = songFile.absolutePath,
+                title = track.name,
+                artist = track.artistName,
+                album = track.albumName,
+                duration = track.duration,
+                albumArtUri = localArtPath,
+                isFavorite = false,
+                addedDate = System.currentTimeMillis(),
+                bitrate = 192,
+                sampleRate = 44100,
+                fileType = "mp3",
+                isDownloaded = true,
+                onlineMetadataJson = metaJson.toString()
+            )
+            
+            songDao.insertSong(songEntity)
+            Log.d("MusicRepository", "Successfully downloaded track: ${track.name} saved to ${songFile.absolutePath}")
+            return@withContext songEntity
+        } catch (e: Exception) {
+            Log.e("MusicRepository", "Failed to download track ${track.id}", e)
+            return@withContext null
         }
     }
 }

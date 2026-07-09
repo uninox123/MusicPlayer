@@ -1,10 +1,15 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.api.CopilotResponse
 import com.example.data.api.GeminiCopilotService
+import com.example.data.api.JamendoService
+import com.example.data.api.JamendoTrack
+import com.example.data.api.JamendoArtist
+import org.json.JSONObject
 import com.example.data.database.AppDatabase
 import com.example.data.database.SongEntity
 import com.example.data.preferences.UserPreferences
@@ -66,6 +71,33 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Jamendo Search Online UI State
+    private val jamendoService = JamendoService()
+
+    private val _onlineTracks = MutableStateFlow<List<JamendoTrack>>(emptyList())
+    val onlineTracks = _onlineTracks.asStateFlow()
+
+    private val _onlineArtists = MutableStateFlow<List<JamendoArtist>>(emptyList())
+    val onlineArtists = _onlineArtists.asStateFlow()
+
+    private val _isOnlineLoading = MutableStateFlow(false)
+    val isOnlineLoading = _isOnlineLoading.asStateFlow()
+
+    private val _downloadProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
+    val downloadProgress = _downloadProgress.asStateFlow()
+
+    val downloadedTrackIds = allSongs.map { songs ->
+        songs.filter { it.isDownloaded && it.onlineMetadataJson != null }.mapNotNull { song ->
+            try {
+                val json = JSONObject(song.onlineMetadataJson!!)
+                val track = json.optJSONObject("track")
+                track?.optString("id")
+            } catch (e: Exception) {
+                null
+            }
+        }.toSet()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     // Gemini Copilot UI State
     private val copilotService = GeminiCopilotService()
@@ -148,8 +180,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleFavorite(song: SongEntity) {
+        val targetFav = !song.isFavorite
         viewModelScope.launch {
-            repository.toggleFavorite(song.path, !song.isFavorite)
+            repository.toggleFavorite(song.path, targetFav)
+            playbackManager.updateSongFavoriteStatus(song.path, targetFav)
         }
     }
 
@@ -318,6 +352,81 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun clearCopilotChat() {
         _copilotMessages.value = listOf(
             "Hello! I am your Nova Music AI Copilot. Ask me to make a playlist, recommend songs, or explain some lyrics!" to false
+        )
+    }
+
+    // Jamendo actions
+    fun searchOnline(query: String) {
+        viewModelScope.launch {
+            _isOnlineLoading.value = true
+            try {
+                val tracks = jamendoService.searchTracks(query)
+                val artists = jamendoService.searchArtists(query)
+                _onlineTracks.value = tracks
+                _onlineArtists.value = artists
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Error fetching from Jamendo", e)
+            } finally {
+                _isOnlineLoading.value = false
+            }
+        }
+    }
+
+    fun playOnlineTrack(track: JamendoTrack) {
+        val song = mapJamendoTrackToSongEntity(track)
+        
+        // Add other track suggestions from search results into the player queue
+        val currentTracks = _onlineTracks.value
+        val queueSongs = currentTracks.map { mapJamendoTrackToSongEntity(it) }
+        val startIndex = currentTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+        
+        setQueueAndPlay(queueSongs, startIndex)
+    }
+
+    fun downloadOnlineTrack(track: JamendoTrack) {
+        if (_downloadProgress.value.containsKey(track.id)) return // already downloading
+        
+        viewModelScope.launch {
+            // Fetch full artist details in background if artist id is available
+            var artistDetails: JamendoArtist? = null
+            if (track.artistId.isNotBlank()) {
+                try {
+                    artistDetails = jamendoService.getArtistDetails(track.artistId)
+                } catch (e: Exception) {
+                    Log.e("MusicViewModel", "Failed to fetch artist details for download", e)
+                }
+            }
+            
+            _downloadProgress.value = _downloadProgress.value + (track.id to 0.0f)
+            repository.downloadTrack(track, artistDetails) { progress ->
+                _downloadProgress.value = _downloadProgress.value + (track.id to progress)
+            }
+            _downloadProgress.value = _downloadProgress.value - track.id
+        }
+    }
+
+    private fun mapJamendoTrackToSongEntity(track: JamendoTrack): SongEntity {
+        // If already downloaded in library, use the local path!
+        val downloaded = allSongs.value.find { song ->
+            song.isDownloaded && song.onlineMetadataJson?.contains("\"id\":\"${track.id}\"") == true
+        }
+        if (downloaded != null) {
+            return downloaded
+        }
+        
+        return SongEntity(
+            path = track.audio,
+            title = track.name,
+            artist = track.artistName,
+            album = track.albumName,
+            duration = track.duration,
+            albumArtUri = if (track.image.isNotBlank()) track.image else track.albumImage,
+            isFavorite = false,
+            bitrate = 192,
+            sampleRate = 44100,
+            fileType = "mp3",
+            isDownloaded = false,
+            onlineMetadataJson = JSONObject().apply { put("track", JSONObject(track.rawJson)) }.toString()
         )
     }
 

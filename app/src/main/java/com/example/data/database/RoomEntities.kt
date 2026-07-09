@@ -19,7 +19,9 @@ data class SongEntity(
     val addedDate: Long = System.currentTimeMillis(),
     val bitrate: Int = 320, // kbps
     val sampleRate: Int = 44100, // Hz
-    val fileType: String = "mp3"
+    val fileType: String = "mp3",
+    val isDownloaded: Boolean = false,
+    val onlineMetadataJson: String? = null
 )
 
 @Entity(tableName = "playlists")

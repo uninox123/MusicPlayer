@@ -221,6 +221,21 @@ class PlaybackManager(private val context: Context) {
         _isRepeatEnabled.value = !_isRepeatEnabled.value
     }
 
+    fun updateSongFavoriteStatus(path: String, isFavorite: Boolean) {
+        val current = _currentSong.value
+        if (current != null && current.path == path) {
+            _currentSong.value = current.copy(isFavorite = isFavorite)
+        }
+        val updatedQueue = _queue.value.map { song ->
+            if (song.path == path) {
+                song.copy(isFavorite = isFavorite)
+            } else {
+                song
+            }
+        }
+        _queue.value = updatedQueue
+    }
+
     // Parameters Config
     fun updatePlaybackParams(speed: Float, pitch: Float) {
         playbackSpeed = speed

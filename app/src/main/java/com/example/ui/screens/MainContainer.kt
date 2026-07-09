@@ -175,6 +175,20 @@ fun MainContainer(
                             modifier = Modifier.testTag("nav_library")
                         )
                         NavigationBarItem(
+                            selected = currentRoute == "search_online",
+                            onClick = {
+                                currentRoute = "search_online"
+                                navController.navigate("search_online") {
+                                    popUpTo("home") { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            icon = { Icon(Icons.Default.Public, contentDescription = "Search Online") },
+                            label = { Text("Search Online") },
+                            modifier = Modifier.testTag("nav_search_online")
+                        )
+                        NavigationBarItem(
                             selected = currentRoute == "equalizer",
                             onClick = {
                                 currentRoute = "equalizer"
@@ -233,6 +247,12 @@ fun MainContainer(
                 }
                 composable("library") {
                     LibraryScreen(
+                        viewModel = viewModel,
+                        onNavigateToPlayer = { isPlayerExpanded = true }
+                    )
+                }
+                composable("search_online") {
+                    SearchOnlineScreen(
                         viewModel = viewModel,
                         onNavigateToPlayer = { isPlayerExpanded = true }
                     )
