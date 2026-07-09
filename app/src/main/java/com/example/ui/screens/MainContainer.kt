@@ -60,6 +60,7 @@ fun MainContainer(
         }
 
         Scaffold(
+            containerColor = Color.Transparent,
             bottomBar = {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     // 1. Floating Mini Player overlay if a song is loaded and Player is not expanded

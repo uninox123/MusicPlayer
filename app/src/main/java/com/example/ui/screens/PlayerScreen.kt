@@ -23,6 +23,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -281,22 +284,16 @@ fun PlayerScreen(
                         }
                     }
                 } else {
-                    // Regular Rotating Vinyl Cover
-                    Box(
+                    VinylCoverVisualizer(
+                        song = song,
+                        isPlaying = isPlaying,
+                        activeRotation = activeRotation,
+                        prefs = prefs,
+                        cornerShape = cornerShape,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(12.dp)
-                    ) {
-                        AsyncImage(
-                            model = song.albumArtUri,
-                            contentDescription = song.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .rotate(activeRotation)
-                                .clip(if (prefs.themeMode == "amoled") CircleShape else cornerShape)
-                        )
-                    }
+                    )
                 }
             }
 
@@ -579,5 +576,203 @@ fun formatTime(ms: Long): String {
     val mins = totalSecs / 60
     val secs = totalSecs % 60
     return String.format("%d:%02d", mins, secs)
+}
+
+@Composable
+fun VinylCoverVisualizer(
+    song: SongEntity,
+    isPlaying: Boolean,
+    activeRotation: Float,
+    prefs: com.example.data.preferences.UserPreferences.PreferencesState,
+    cornerShape: RoundedCornerShape,
+    modifier: Modifier = Modifier
+) {
+    val scalePulseTransition = rememberInfiniteTransition(label = "pulse_scale")
+    
+    // Pulse animation (heartbeat/bass pulse effect)
+    val pulseScale by if (isPlaying) {
+        scalePulseTransition.animateFloat(
+            initialValue = 0.97f,
+            targetValue = 1.03f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1600, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "pulse"
+        )
+    } else {
+        remember { mutableStateOf(1f) }
+    }
+
+    // Concentric expanding visualizer rings (sound wave echo effect)
+    val ring1Alpha by if (isPlaying) {
+        scalePulseTransition.animateFloat(
+            initialValue = 0.5f,
+            targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2200, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "ring1_alpha"
+        )
+    } else {
+        remember { mutableStateOf(0f) }
+    }
+    
+    val ring1Scale by if (isPlaying) {
+        scalePulseTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.3f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2200, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "ring1_scale"
+        )
+    } else {
+        remember { mutableStateOf(1f) }
+    }
+
+    val ring2Alpha by if (isPlaying) {
+        scalePulseTransition.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2200, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "ring2_alpha"
+        )
+    } else {
+        remember { mutableStateOf(0f) }
+    }
+    
+    val ring2Scale by if (isPlaying) {
+        scalePulseTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.55f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2200, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "ring2_scale"
+        )
+    } else {
+        remember { mutableStateOf(1f) }
+    }
+
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        // Expand wave 2 (Outer)
+        if (isPlaying) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(0.68f)
+                    .graphicsLayer(
+                        scaleX = ring2Scale,
+                        scaleY = ring2Scale,
+                        alpha = ring2Alpha
+                    )
+                    .background(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                        shape = CircleShape
+                    )
+            )
+            
+            // Expand wave 1 (Inner)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(0.68f)
+                    .graphicsLayer(
+                        scaleX = ring1Scale,
+                        scaleY = ring1Scale,
+                        alpha = ring1Alpha
+                    )
+                    .background(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                        shape = CircleShape
+                    )
+            )
+        }
+
+        // Main vinyl card
+        Card(
+            shape = CircleShape,
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF141414)),
+            modifier = Modifier
+                .fillMaxSize(0.72f)
+                .graphicsLayer(
+                    scaleX = pulseScale,
+                    scaleY = pulseScale
+                )
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(6.dp)
+                    .background(Color.Black, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                // Vinyl grooves (drawn in black disc area)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .drawBehind {
+                            val radiusStep = size.minDimension / 18f
+                            val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                            for (i in 1..7) {
+                                drawCircle(
+                                    color = Color.White.copy(alpha = 0.04f),
+                                    radius = radiusStep * (i + 1),
+                                    center = center,
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f)
+                                )
+                            }
+                        }
+                        .rotate(activeRotation),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Center Album Cover image (simulating the record label)
+                    AsyncImage(
+                        model = song.albumArtUri,
+                        contentDescription = song.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize(0.56f)
+                            .clip(CircleShape)
+                    )
+
+                    // Spindle hole center cap
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize(0.08f)
+                            .background(MaterialTheme.colorScheme.background, CircleShape)
+                            .border(1.dp, Color.DarkGray, CircleShape)
+                    )
+                }
+
+                // Sweeping Vinyl metallic shine reflection overlay (static sweep gradient, creating a realistic reflection as record spins)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.sweepGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.White.copy(alpha = 0.07f),
+                                    Color.Transparent,
+                                    Color.White.copy(alpha = 0.07f),
+                                    Color.Transparent
+                                )
+                            ),
+                            shape = CircleShape
+                        )
+                )
+            }
+        }
+    }
 }
 
